@@ -98,6 +98,28 @@ function initMap() {
   }
 }
 
+function loadMapLibrary() {
+  if (typeof maplibregl !== "undefined") { initMap(); return; }
+  const sources = [
+    "https://cdn.jsdelivr.net/npm/maplibre-gl@6.13.0/dist/maplibre-gl.js",
+    "https://unpkg.com/maplibre-gl@6.13.0/dist/maplibre-gl.js"
+  ];
+  let sourceIndex = 0;
+  const tryNext = () => {
+    if (typeof maplibregl !== "undefined") { initMap(); return; }
+    if (sourceIndex >= sources.length) { initMap(); return; }
+    const script = document.createElement("script");
+    let settled = false;
+    const next = () => { if (!settled) { settled = true; sourceIndex++; tryNext(); } };
+    script.onload = () => { if (!settled) { settled = true; initMap(); } };
+    script.onerror = next;
+    setTimeout(next, 8000);
+    script.src = sources[sourceIndex];
+    document.head.append(script);
+  };
+  tryNext();
+}
+
 function select(point) {
   if (!map || typeof maplibregl === "undefined") return;
   selected = point; if (selectedMarker) selectedMarker.remove();
@@ -187,6 +209,5 @@ document.querySelectorAll(".tab").forEach(button => button.onclick = () => {
 });
 
 render();
-window.addEventListener("maplibre-ready", initMap, { once: true });
-initMap();
+loadMapLibrary();
 if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(error => console.warn("Service worker", error)));

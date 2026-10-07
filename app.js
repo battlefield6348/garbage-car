@@ -1,1 +1,192 @@
-const STORE="garbage-car.routes.v1",ARRIVAL_METERS=30;let routes=load(),activeId=routes[0]?.id??null,map,selected,selectedMarker,markers=[],currentPosition,watchId=null,navigating=false,navIndex=0;const $=id=>document.getElementById(id),uid=()=>crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2);function load(){try{const v=JSON.parse(localStorage.getItem(STORE)||"[]");return Array.isArray(v)?v:[]}catch{return[]}}function active(){return routes.find(r=>r.id===activeId)}function save(){localStorage.setItem(STORE,JSON.stringify(routes));render()}function create(){const r={id:uid(),name:"未命名路線",waypoints:[],createdAt:new Date().toISOString()};routes.unshift(r);activeId=r.id;save()}function render(){$("routeCount").textContent=routes.length+" 條";$("routeList").innerHTML="";routes.forEach(r=>{const n=$("routeTemplate").content.firstElementChild.cloneNode(true);n.classList.toggle("active",r.id===activeId);n.querySelector("strong").textContent=r.name;n.querySelector("span").textContent=r.waypoints.length+" 個地點";n.onclick=()=>{if(navigating)return;activeId=r.id;render()};$("routeList").append(n)});const r=active();$("emptyState").hidden=!!r;$("editorContent").hidden=!r;if(!r)return;$("routeName").value=r.name;$("routeMeta").textContent="MapLibre · 路線資料儲存在此瀏覽器";$("waypointCount").textContent=r.waypoints.length+" 個";$("waypointCountTab").textContent="("+r.waypoints.length+")";$("startNavBtn").disabled=!r.waypoints.length||navigating;$("waypointList").innerHTML="";r.waypoints.forEach((p,i)=>{const n=$("waypointTemplate").content.firstElementChild.cloneNode(true);n.querySelector(".waypoint-index").textContent=i+1;n.querySelector("strong").textContent=p.name;n.querySelector(".address").textContent=p.address||formatCoord(p);n.querySelector('[data-action="google"]').onclick=()=>googleNav(p);const up=n.querySelector('[data-action="up"]');up.disabled=i===0||navigating;up.onclick=()=>move(i,i-1);const down=n.querySelector('[data-action="down"]');down.disabled=i===r.waypoints.length-1||navigating;down.onclick=()=>move(i,i+1);n.querySelector('[data-action="delete"]').disabled=navigating;n.querySelector('[data-action="delete"]').onclick=()=>{r.waypoints.splice(i,1);save()};$("waypointList").append(n)});drawMarkers()}function formatCoord(p){return p.lat.toFixed(5)+", "+p.lng.toFixed(5)}function move(a,b){const r=active();[r.waypoints[a],r.waypoints[b]]=[r.waypoints[b],r.waypoints[a]];save()}function initMap(){map=new maplibregl.Map({container:"map",style:"https://demotiles.maplibre.org/style.json",center:[120.9,23.7],zoom:7});map.addControl(new maplibregl.NavigationControl(),"top-right");const geo=new maplibregl.GeolocateControl({positionOptions:{enableHighAccuracy:true},trackUserLocation:true,showUserLocation:true});map.addControl(geo,"top-right");geo.on("geolocate",e=>{currentPosition={lat:e.coords.latitude,lng:e.coords.longitude};if(navigating)updateNavigation()});map.on("load",()=>{geo.trigger();drawMarkers()});map.on("click",e=>{if(navigating)return;select({name:"自訂停靠點",address:formatCoord({lat:e.lngLat.lat,lng:e.lngLat.lng}),lat:e.lngLat.lat,lng:e.lngLat.lng})})}function select(p){selected=p;if(selectedMarker)selectedMarker.remove();selectedMarker=new maplibregl.Marker().setLngLat([p.lng,p.lat]).addTo(map);$("selectedName").textContent=p.name;$("selectedAddress").textContent=p.address;$("selectionCard").hidden=false}function drawMarkers(){if(!map)return;markers.forEach(m=>m.remove());markers=[];const r=active();if(!r)return;r.waypoints.forEach((p,i)=>{const el=document.createElement("div");el.className="number-marker";el.textContent=i+1;markers.push(new maplibregl.Marker({element:el}).setLngLat([p.lng,p.lat]).addTo(map))})}function distanceMeters(a,b){const R=6371000,dLat=(b.lat-a.lat)*Math.PI/180,dLon=(b.lng-a.lng)*Math.PI/180,x=Math.sin(dLat/2)**2+Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLon/2)**2;return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x))}function startNavigation(){const r=active();if(!r?.waypoints.length)return;navigating=true;navIndex=0;$("navPanel").hidden=false;$("selectionCard").hidden=true;if(selectedMarker){selectedMarker.remove();selectedMarker=null}if(navigator.geolocation){watchId=navigator.geolocation.watchPosition(p=>{currentPosition={lat:p.coords.latitude,lng:p.coords.longitude};updateNavigation()},e=>console.warn("GPS",e.message),{enableHighAccuracy:true,maximumAge:3000,timeout:10000})}render();updateNavigation()}function updateNavigation(){const r=active(),target=r?.waypoints[navIndex];if(!target){finishNavigation(true);return}$("navProgress").textContent="第 "+(navIndex+1)+" / "+r.waypoints.length+" 站";$("navTarget").textContent=target.name;if(currentPosition){const d=distanceMeters(currentPosition,target);$("navDistance").textContent=d<1000?Math.round(d)+" m":(d/1000).toFixed(1)+" km";if(d<=ARRIVAL_METERS){navIndex++;if(navIndex>=r.waypoints.length){finishNavigation(true);return}updateNavigation();return}map.easeTo({center:[currentPosition.lng,currentPosition.lat],zoom:17})}else $("navDistance").textContent="等待 GPS…"}function skip(){if(!navigating)return;navIndex++;updateNavigation()}function finishNavigation(done=false){navigating=false;if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null}$("navPanel").hidden=true;render();if(done)alert("路線已完成")}function googleNav(p){const u=new URL("https://www.google.com/maps/dir/");u.searchParams.set("api","1");u.searchParams.set("destination",p.lat+","+p.lng);u.searchParams.set("travelmode","driving");window.open(u,"_blank","noopener")}$("addSelectedBtn").onclick=()=>{const r=active();if(!r||!selected)return;r.waypoints.push({id:uid(),...selected});selected=null;if(selectedMarker){selectedMarker.remove();selectedMarker=null}$("selectionCard").hidden=true;save()};$("startNavBtn").onclick=startNavigation;$("skipBtn").onclick=skip;$("stopNavBtn").onclick=()=>finishNavigation(false);$("routeName").onchange=e=>{const r=active();if(r){r.name=e.target.value.trim()||"未命名路線";save()}};$("deleteRouteBtn").onclick=()=>{const r=active();if(!r||!confirm("確定刪除「"+r.name+"」？"))return;routes=routes.filter(x=>x.id!==r.id);activeId=routes[0]?.id??null;save()};$("exportBtn").onclick=()=>{const b=new Blob([JSON.stringify({version:1,routes},null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="garbage-car-routes.json";a.click();URL.revokeObjectURL(a.href)};$("importInput").onchange=async e=>{const f=e.target.files?.[0];if(!f)return;try{const d=JSON.parse(await f.text());if(d.version!==1||!Array.isArray(d.routes))throw 0;if(confirm("匯入會覆蓋目前路線，繼續？")){routes=d.routes;activeId=routes[0]?.id??null;save()}}catch{alert("無法讀取備份檔")}e.target.value=""};$("newRouteBtn").onclick=create;$("emptyNewRouteBtn").onclick=create;document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b));document.querySelector(".workspace").classList.toggle("show-queue",b.dataset.tab==="queue")});if("serviceWorker"in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js"));render();initMap();
+const STORE = "garbage-car.routes.v1";
+const ARRIVAL_METERS = 30;
+let routes = load();
+let activeId = routes[0]?.id ?? null;
+let map;
+let selected;
+let selectedMarker;
+let markers = [];
+let currentPosition;
+let watchId = null;
+let navigating = false;
+let navIndex = 0;
+
+const $ = id => document.getElementById(id);
+const uid = () => globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36) + Math.random().toString(36).slice(2);
+
+function load() {
+  try {
+    const value = JSON.parse(localStorage.getItem(STORE) || "[]");
+    return Array.isArray(value) ? value : [];
+  } catch { return []; }
+}
+
+function active() { return routes.find(route => route.id === activeId); }
+function save() { localStorage.setItem(STORE, JSON.stringify(routes)); render(); }
+
+function create() {
+  const route = { id: uid(), name: "未命名路線", waypoints: [], createdAt: new Date().toISOString() };
+  routes.unshift(route); activeId = route.id; save();
+}
+
+function render() {
+  $("routeCount").textContent = routes.length + " 條";
+  $("routeList").innerHTML = "";
+  routes.forEach(route => {
+    const node = $("routeTemplate").content.firstElementChild.cloneNode(true);
+    node.classList.toggle("active", route.id === activeId);
+    node.querySelector("strong").textContent = route.name;
+    node.querySelector("span").textContent = route.waypoints.length + " 個地點";
+    node.onclick = () => { if (!navigating) { activeId = route.id; render(); } };
+    $("routeList").append(node);
+  });
+  const route = active();
+  $("emptyState").hidden = !!route;
+  $("editorContent").hidden = !route;
+  if (!route) return;
+  $("routeName").value = route.name;
+  $("routeMeta").textContent = "MapLibre · 路線資料儲存在此瀏覽器";
+  $("waypointCount").textContent = route.waypoints.length + " 個";
+  $("waypointCountTab").textContent = "(" + route.waypoints.length + ")";
+  $("startNavBtn").disabled = !route.waypoints.length || navigating;
+  $("waypointList").innerHTML = "";
+  route.waypoints.forEach((point, index) => {
+    const node = $("waypointTemplate").content.firstElementChild.cloneNode(true);
+    node.querySelector(".waypoint-index").textContent = index + 1;
+    node.querySelector("strong").textContent = point.name;
+    node.querySelector(".address").textContent = point.address || formatCoord(point);
+    node.querySelector('[data-action="google"]').onclick = () => googleNav(point);
+    const up = node.querySelector('[data-action="up"]');
+    up.disabled = index === 0 || navigating; up.onclick = () => move(index, index - 1);
+    const down = node.querySelector('[data-action="down"]');
+    down.disabled = index === route.waypoints.length - 1 || navigating; down.onclick = () => move(index, index + 1);
+    const remove = node.querySelector('[data-action="delete"]');
+    remove.disabled = navigating; remove.onclick = () => { route.waypoints.splice(index, 1); save(); };
+    $("waypointList").append(node);
+  });
+  drawMarkers();
+}
+
+function formatCoord(point) { return point.lat.toFixed(5) + ", " + point.lng.toFixed(5); }
+function move(from, to) {
+  const route = active(); if (!route) return;
+  [route.waypoints[from], route.waypoints[to]] = [route.waypoints[to], route.waypoints[from]]; save();
+}
+
+function showMapStatus(message) {
+  const pane = $("map");
+  pane.textContent = message; pane.style.display = "grid"; pane.style.placeItems = "center";
+  pane.style.padding = "24px"; pane.style.textAlign = "center"; pane.style.color = "#6b7280";
+}
+
+function initMap() {
+  if (typeof maplibregl === "undefined") {
+    showMapStatus("地圖暫時無法載入，但其他路線功能仍可使用。請重新整理或檢查網路連線。\n\n也可以直接使用右側的路線隊列。\n");
+    return;
+  }
+  try {
+    map = new maplibregl.Map({ container: "map", style: "https://demotiles.maplibre.org/style.json", center: [120.9, 23.7], zoom: 7 });
+    map.addControl(new maplibregl.NavigationControl(), "top-right");
+    const geo = new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true, showUserLocation: true });
+    map.addControl(geo, "top-right");
+    geo.on("geolocate", event => { currentPosition = { lat: event.coords.latitude, lng: event.coords.longitude }; if (navigating) updateNavigation(); });
+    map.on("load", () => { geo.trigger(); drawMarkers(); });
+    map.on("click", event => { if (!navigating) select({ name: "自訂停靠點", address: formatCoord({ lat: event.lngLat.lat, lng: event.lngLat.lng }), lat: event.lngLat.lat, lng: event.lngLat.lng }); });
+  } catch (error) {
+    console.error("Map initialization failed", error); map = undefined;
+    showMapStatus("地圖暫時無法載入，但其他路線功能仍可使用。請重新整理或檢查網路連線。\n\n也可以直接使用右側的路線隊列。\n");
+  }
+}
+
+function select(point) {
+  if (!map || typeof maplibregl === "undefined") return;
+  selected = point; if (selectedMarker) selectedMarker.remove();
+  selectedMarker = new maplibregl.Marker().setLngLat([point.lng, point.lat]).addTo(map);
+  $("selectedName").textContent = point.name; $("selectedAddress").textContent = point.address; $("selectionCard").hidden = false;
+}
+
+function drawMarkers() {
+  if (!map || typeof maplibregl === "undefined") return;
+  markers.forEach(marker => marker.remove()); markers = [];
+  const route = active(); if (!route) return;
+  route.waypoints.forEach((point, index) => {
+    const element = document.createElement("div"); element.className = "number-marker"; element.textContent = index + 1;
+    markers.push(new maplibregl.Marker({ element }).setLngLat([point.lng, point.lat]).addTo(map));
+  });
+}
+
+function distanceMeters(a, b) {
+  const radius = 6371000, lat = (b.lat - a.lat) * Math.PI / 180, lng = (b.lng - a.lng) * Math.PI / 180;
+  const value = Math.sin(lat / 2) ** 2 + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(lng / 2) ** 2;
+  return 2 * radius * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
+}
+
+function startNavigation() {
+  const route = active(); if (!route?.waypoints.length) return;
+  navigating = true; navIndex = 0; $("navPanel").hidden = false; $("selectionCard").hidden = true;
+  if (selectedMarker) { selectedMarker.remove(); selectedMarker = null; }
+  if (navigator.geolocation) watchId = navigator.geolocation.watchPosition(position => { currentPosition = { lat: position.coords.latitude, lng: position.coords.longitude }; updateNavigation(); }, error => console.warn("GPS", error.message), { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 });
+  render(); updateNavigation();
+}
+
+function updateNavigation() {
+  const route = active(), target = route?.waypoints[navIndex];
+  if (!target) { finishNavigation(true); return; }
+  $("navProgress").textContent = "第 " + (navIndex + 1) + " / " + route.waypoints.length + " 站";
+  $("navTarget").textContent = target.name;
+  if (!currentPosition) { $("navDistance").textContent = "等待 GPS…"; return; }
+  const distance = distanceMeters(currentPosition, target);
+  $("navDistance").textContent = distance < 1000 ? Math.round(distance) + " m" : (distance / 1000).toFixed(1) + " km";
+  if (distance <= ARRIVAL_METERS) { navIndex++; updateNavigation(); return; }
+  if (map) map.easeTo({ center: [currentPosition.lng, currentPosition.lat], zoom: 17 });
+}
+
+function finishNavigation(done = false) {
+  navigating = false;
+  if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+  $("navPanel").hidden = true; render(); if (done) alert("路線已完成");
+}
+function googleNav(point) {
+  const url = new URL("https://www.google.com/maps/dir/");
+  url.searchParams.set("api", "1"); url.searchParams.set("destination", point.lat + "," + point.lng); url.searchParams.set("travelmode", "driving");
+  window.open(url, "_blank", "noopener");
+}
+
+$("addSelectedBtn").onclick = () => {
+  const route = active(); if (!route || !selected) return;
+  route.waypoints.push({ id: uid(), ...selected }); selected = undefined;
+  if (selectedMarker) { selectedMarker.remove(); selectedMarker = null; }
+  $("selectionCard").hidden = true; save();
+};
+$("startNavBtn").onclick = startNavigation;
+$("skipBtn").onclick = () => { if (navigating) { navIndex++; updateNavigation(); } };
+$("stopNavBtn").onclick = () => finishNavigation(false);
+$("routeName").onchange = event => { const route = active(); if (route) { route.name = event.target.value.trim() || "未命名路線"; save(); } };
+$("deleteRouteBtn").onclick = () => {
+  const route = active(); if (!route || !confirm("確定刪除「" + route.name + "」？")) return;
+  routes = routes.filter(item => item.id !== route.id); activeId = routes[0]?.id ?? null; save();
+};
+$("exportBtn").onclick = () => {
+  const blob = new Blob([JSON.stringify({ version: 1, routes }, null, 2)], { type: "application/json" });
+  const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = "garbage-car-routes.json"; link.click(); URL.revokeObjectURL(link.href);
+};
+$("importInput").onchange = async event => {
+  const file = event.target.files?.[0]; if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    if (data.version !== 1 || !Array.isArray(data.routes)) throw new Error("invalid backup");
+    if (confirm("匯入會覆蓋目前路線，繼續？")) { routes = data.routes; activeId = routes[0]?.id ?? null; save(); }
+  } catch { alert("無法讀取備份檔"); }
+  event.target.value = "";
+};
+$("newRouteBtn").onclick = create;
+$("emptyNewRouteBtn").onclick = create;
+document.querySelectorAll(".tab").forEach(button => button.onclick = () => {
+  document.querySelectorAll(".tab").forEach(tab => tab.classList.toggle("active", tab === button));
+  document.querySelector(".workspace").classList.toggle("show-queue", button.dataset.tab === "queue");
+});
+
+render();
+window.addEventListener("maplibre-ready", initMap, { once: true });
+initMap();
+if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(error => console.warn("Service worker", error)));

@@ -1,0 +1,11 @@
+{
+  "name": "Garbage Car Route Planner",
+  "short_name": "Garbage Car",
+  "description": "多點路線規劃與收藏工具",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f3f4f6",
+  "theme_color": "#111827",
+  "icons": []
+}

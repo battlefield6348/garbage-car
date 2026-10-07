@@ -85,7 +85,25 @@ function initMap() {
     return;
   }
   try {
-    map = new maplibregl.Map({ container: "map", style: "https://demotiles.maplibre.org/style.json", center: [120.9, 23.7], zoom: 7 });
+    map = new maplibregl.Map({
+      container: "map",
+      style: {
+        version: 8,
+        sources: {
+          osm: {
+            type: "raster",
+            tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+            tileSize: 256,
+            minzoom: 0,
+            maxzoom: 19,
+            attribution: "© OpenStreetMap contributors"
+          }
+        },
+        layers: [{ id: "osm", type: "raster", source: "osm" }]
+      },
+      center: [120.9, 23.7],
+      zoom: 7
+    });
     map.addControl(new maplibregl.NavigationControl(), "top-right");
     const geo = new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true, showUserLocation: true });
     map.addControl(geo, "top-right");

@@ -1,93 +1,10 @@
-<!doctype html>
-<html lang="zh-Hant">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#111827">
-  <meta name="description" content="多點路線規劃與收藏工具">
-  <link rel="manifest" href="./manifest.webmanifest">
-  <link rel="stylesheet" href="./styles.css">
-  <title>Garbage Car Route Planner</title>
-</head>
-<body>
-  <header class="topbar">
-    <div><strong>Garbage Car</strong><span>多點路線規劃器</span></div>
-    <div class="actions">
-      <button id="exportBtn" class="ghost">匯出 JSON</button>
-      <label class="button ghost">匯入 JSON<input id="importInput" type="file" accept="application/json" hidden></label>
-      <button id="newRouteBtn">＋ 新增路線</button>
-    </div>
-  </header>
-
-  <main class="layout">
-    <aside class="routes-panel">
-      <div class="panel-title"><h2>我的路線</h2><span id="routeCount"></span></div>
-      <div id="routeList" class="route-list"></div>
-    </aside>
-
-    <section class="editor">
-      <div id="emptyState" class="empty-state">
-        <h1>建立第一條路線</h1>
-        <p>路線只儲存在這台裝置的瀏覽器，可隨時匯出 JSON 備份。</p>
-        <button id="emptyNewRouteBtn">建立路線</button>
-      </div>
-
-      <div id="editorContent" hidden>
-        <div class="editor-head">
-          <div>
-            <input id="routeName" class="route-name" maxlength="100" aria-label="路線名稱">
-            <p id="routeMeta" class="muted"></p>
-          </div>
-          <button id="deleteRouteBtn" class="danger ghost">刪除路線</button>
-        </div>
-
-        <div class="workspace">
-          <div class="waypoint-column">
-            <form id="waypointForm" class="waypoint-form">
-              <h3>新增地點</h3>
-              <input id="placeName" placeholder="名稱，例如：台中火車站" required maxlength="120">
-              <input id="placeAddress" placeholder="地址（選填）" maxlength="250">
-              <div class="coordinates">
-                <input id="placeLat" type="number" step="any" min="-90" max="90" placeholder="緯度" required>
-                <input id="placeLng" type="number" step="any" min="-180" max="180" placeholder="經度" required>
-              </div>
-              <textarea id="placeNote" placeholder="備註（選填）" maxlength="500"></textarea>
-              <button type="submit">＋ 加入途經點</button>
-            </form>
-            <div class="section-head"><h3>途經點</h3><span id="waypointCount"></span></div>
-            <ol id="waypointList" class="waypoint-list"></ol>
-          </div>
-
-          <div class="map-placeholder">
-            <div>
-              <span class="map-icon">⌖</span>
-              <h2>Google Maps</h2>
-              <p>下一階段接入地點搜尋、地圖選點與完整道路 Polyline。</p>
-              <p class="muted">目前可先用經緯度建立與保存路線。</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  </main>
-
-  <template id="routeTemplate">
-    <button class="route-card"><strong></strong><span></span></button>
-  </template>
-
-  <template id="waypointTemplate">
-    <li class="waypoint">
-      <div class="waypoint-index"></div>
-      <div class="waypoint-info"><strong></strong><span class="address"></span><span class="coords"></span><span class="note"></span></div>
-      <div class="waypoint-actions">
-        <button data-action="nav" class="icon-btn" title="導航到下一站">導航</button>
-        <button data-action="up" class="icon-btn" title="上移">↑</button>
-        <button data-action="down" class="icon-btn" title="下移">↓</button>
-        <button data-action="delete" class="icon-btn danger" title="刪除">×</button>
-      </div>
-    </li>
-  </template>
-
-  <script src="./app.js" defer></script>
-</body>
-</html>
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#111827"><link rel="manifest" href="./manifest.webmanifest"><link rel="stylesheet" href="./styles.css"><title>Garbage Car</title></head><body>
+<header class="topbar"><div><strong>Garbage Car</strong><span>多點路線規劃器</span></div><div class="actions"><button id="settingsBtn" class="ghost">地圖設定</button><button id="exportBtn" class="ghost">匯出</button><label class="button ghost">匯入<input id="importInput" type="file" accept="application/json" hidden></label><button id="newRouteBtn">＋ 路線</button></div></header>
+<main class="layout"><aside class="routes-panel"><div class="panel-title"><h2>我的路線</h2><span id="routeCount"></span></div><div id="routeList" class="route-list"></div></aside><section class="editor">
+<div id="emptyState" class="empty-state"><h1>建立第一條路線</h1><p>搜尋或直接點地圖加入停靠點，再逐站開啟 Google Maps 導航。</p><button id="emptyNewRouteBtn">建立路線</button></div>
+<div id="editorContent" hidden><div class="editor-head"><div><input id="routeName" class="route-name" maxlength="100"><p id="routeMeta" class="muted"></p></div><button id="deleteRouteBtn" class="danger ghost">刪除</button></div>
+<div class="mobile-tabs"><button class="tab active" data-tab="map">地圖</button><button class="tab" data-tab="queue">路線隊列 <span id="waypointCountTab"></span></button></div>
+<div class="workspace"><div class="map-pane"><div id="mapSetup" class="map-setup"><h2>啟用 Google 地圖</h2><p>API Key 只保存在這台裝置，不寫入 GitHub。</p><button id="setupKeyBtn">設定 API Key</button></div><div id="map" hidden></div><div id="searchContainer" class="search-container" hidden></div><div id="selectionCard" class="selection-card" hidden><div><strong id="selectedName"></strong><span id="selectedAddress"></span></div><button id="addSelectedBtn">＋ 加入路線</button></div></div>
+<div class="waypoint-column"><div class="section-head"><h3>路線隊列</h3><span id="waypointCount"></span></div><p class="muted compact">使用 ↑ ↓ 在手機調整順序。</p><ol id="waypointList" class="waypoint-list"></ol></div></div></div></section></main>
+<dialog id="settingsDialog"><form method="dialog" class="settings-form"><h2>Google Maps 設定</h2><p>請使用已限制網站來源與 API 權限的瀏覽器 API Key。</p><label>API Key<input id="apiKeyInput" type="password" autocomplete="off" placeholder="AIza..."></label><div class="dialog-actions"><button value="cancel" class="ghost">取消</button><button id="saveKeyBtn" value="default">儲存並載入</button></div><button id="clearKeyBtn" type="button" class="danger ghost">清除 Key</button></form></dialog>
+<template id="routeTemplate"><button class="route-card"><strong></strong><span></span></button></template><template id="waypointTemplate"><li class="waypoint"><div class="waypoint-index"></div><div class="waypoint-info"><strong></strong><span class="address"></span></div><div class="waypoint-actions"><button data-action="nav" class="icon-btn">導航</button><button data-action="up" class="icon-btn">↑</button><button data-action="down" class="icon-btn">↓</button><button data-action="delete" class="icon-btn danger">×</button></div></li></template><script src="./app.js" defer></script></body></html>

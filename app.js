@@ -87,20 +87,7 @@ function initMap() {
   try {
     map = new maplibregl.Map({
       container: "map",
-      style: {
-        version: 8,
-        sources: {
-          osm: {
-            type: "raster",
-            tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-            tileSize: 256,
-            minzoom: 0,
-            maxzoom: 19,
-            attribution: "© OpenStreetMap contributors"
-          }
-        },
-        layers: [{ id: "osm", type: "raster", source: "osm" }]
-      },
+      style: "https://tiles.openfreemap.org/styles/liberty",
       center: [120.9, 23.7],
       zoom: 7
     });
@@ -109,7 +96,15 @@ function initMap() {
     map.addControl(geo, "top-right");
     geo.on("geolocate", event => { currentPosition = { lat: event.coords.latitude, lng: event.coords.longitude }; if (navigating) updateNavigation(); });
     map.on("load", () => { geo.trigger(); drawMarkers(); });
-    map.on("click", event => { if (!navigating) select({ name: "自訂停靠點", address: formatCoord({ lat: event.lngLat.lat, lng: event.lngLat.lng }), lat: event.lngLat.lat, lng: event.lngLat.lng }); });
+    map.on("click", event => {
+      if (navigating) return;
+      select({
+        name: "自訂停靠點",
+        address: formatCoord({ lat: event.lngLat.lat, lng: event.lngLat.lng }),
+        lat: event.lngLat.lat,
+        lng: event.lngLat.lng
+      });
+    });
   } catch (error) {
     console.error("Map initialization failed", error); map = undefined;
     showMapStatus("地圖暫時無法載入，但其他路線功能仍可使用。請重新整理或檢查網路連線。\n\n也可以直接使用右側的路線隊列。\n");

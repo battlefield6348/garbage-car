@@ -98,28 +98,23 @@ function initMap() {
   }
 }
 
-function loadMapLibrary() {
-  if (typeof maplibregl !== "undefined") { initMap(); return; }
-  const sources = [
-    "https://cdn.jsdelivr.net/npm/maplibre-gl@6.13.0/dist/maplibre-gl.js",
-    "https://unpkg.com/maplibre-gl@6.13.0/dist/maplibre-gl.js"
-  ];
-  let sourceIndex = 0;
-  const tryNext = () => {
-    if (typeof maplibregl !== "undefined") { initMap(); return; }
-    if (sourceIndex >= sources.length) { initMap(); return; }
-    const script = document.createElement("script");
-    let settled = false;
-    const next = () => { if (!settled) { settled = true; sourceIndex++; tryNext(); } };
-    script.onload = () => { if (!settled) { settled = true; initMap(); } };
-    script.onerror = next;
-    setTimeout(next, 8000);
-    script.src = sources[sourceIndex];
-    document.head.append(script);
-  };
-  tryNext();
+async function loadMapLibrary() {
+  try {
+    const module = await import("https://unpkg.com/maplibre-gl@6.13.0/dist/maplibre-gl.mjs");
+    globalThis.maplibregl = module;
+    initMap();
+  } catch (primaryError) {
+    console.warn("UNPKG MapLibre load failed", primaryError);
+    try {
+      const module = await import("https://cdn.jsdelivr.net/npm/maplibre-gl@6.13.0/dist/maplibre-gl.mjs");
+      globalThis.maplibregl = module;
+      initMap();
+    } catch (fallbackError) {
+      console.error("MapLibre load failed", fallbackError);
+      showMapStatus("地圖暫時無法載入，但其他路線功能仍可使用。請重新整理或檢查網路連線。");
+    }
+  }
 }
-
 function select(point) {
   if (!map || typeof maplibregl === "undefined") return;
   selected = point; if (selectedMarker) selectedMarker.remove();

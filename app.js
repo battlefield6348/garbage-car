@@ -10,6 +10,10 @@ let currentPosition;
 let watchId = null;
 let navigating = false;
 let navIndex = 0;
+let headingUp = true;
+let smoothedHeading = null;
+let deviceHeading = null;
+let orientationListening = false;
 
 const $ = id => document.getElementById(id);
 const uid = () => globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36) + Math.random().toString(36).slice(2);
@@ -151,11 +155,37 @@ function distanceMeters(a, b) {
   return 2 * radius * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
 }
 
+function normalizeHeading(value) { return ((value % 360) + 360) % 360; }
+function smoothHeading(next) {
+  next = normalizeHeading(next);
+  if (smoothedHeading === null) return smoothedHeading = next;
+  const delta = ((next - smoothedHeading + 540) % 360) - 180;
+  smoothedHeading = normalizeHeading(smoothedHeading + delta * 0.25);
+  return smoothedHeading;
+}
+function onDeviceOrientation(event) {
+  const value = typeof event.webkitCompassHeading === "number" ? event.webkitCompassHeading : (typeof event.alpha === "number" ? 360 - event.alpha : null);
+  if (value !== null) deviceHeading = normalizeHeading(value);
+}
+async function enableOrientation() {
+  if (orientationListening || typeof DeviceOrientationEvent === "undefined") return;
+  try {
+    if (typeof DeviceOrientationEvent.requestPermission === "function") {
+      const permission = await DeviceOrientationEvent.requestPermission();
+      if (permission !== "granted") return;
+    }
+    window.addEventListener("deviceorientationabsolute", onDeviceOrientation, true);
+    window.addEventListener("deviceorientation", onDeviceOrientation, true);
+    orientationListening = true;
+  } catch (error) { console.warn("Orientation", error); }
+}
+
 function startNavigation() {
   const route = active(); if (!route?.waypoints.length) return;
-  navigating = true; navIndex = 0; $("navPanel").hidden = false; $("selectionCard").hidden = true;
+  navigating = true; navIndex = 0; smoothedHeading = null; $("navPanel").hidden = false; $("selectionCard").hidden = true;
+  enableOrientation();
   if (selectedMarker) { selectedMarker.remove(); selectedMarker = null; }
-  if (navigator.geolocation) watchId = navigator.geolocation.watchPosition(position => { currentPosition = { lat: position.coords.latitude, lng: position.coords.longitude }; updateNavigation(); }, error => console.warn("GPS", error.message), { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 });
+  if (navigator.geolocation) watchId = navigator.geolocation.watchPosition(position => { currentPosition = { lat: position.coords.latitude, lng: position.coords.longitude, heading: position.coords.heading, speed: position.coords.speed, accuracy: position.coords.accuracy }; updateNavigation(); }, error => console.warn("GPS", error.message), { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 });
   render(); updateNavigation();
 }
 
@@ -168,11 +198,17 @@ function updateNavigation() {
   const distance = distanceMeters(currentPosition, target);
   $("navDistance").textContent = distance < 1000 ? Math.round(distance) + " m" : (distance / 1000).toFixed(1) + " km";
   if (distance <= ARRIVAL_METERS) { navIndex++; updateNavigation(); return; }
-  if (map) map.easeTo({ center: [currentPosition.lng, currentPosition.lat], zoom: 17 });
+  if (map) {
+    const gpsHeading = Number.isFinite(currentPosition.heading) && (currentPosition.speed === null || currentPosition.speed > 0.8) ? currentPosition.heading : null;
+    const rawHeading = gpsHeading ?? deviceHeading;
+    const bearing = headingUp && rawHeading !== null ? smoothHeading(rawHeading) : 0;
+    map.easeTo({ center: [currentPosition.lng, currentPosition.lat], zoom: 17, bearing, duration: 500, essential: true });
+  }
 }
 
 function finishNavigation(done = false) {
-  navigating = false;
+  navigating = false; smoothedHeading = null;
+  if (map) map.easeTo({ bearing: 0, duration: 400 });
   if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
   $("navPanel").hidden = true; render(); if (done) alert("路線已完成");
 }
@@ -189,6 +225,7 @@ $("addSelectedBtn").onclick = () => {
   $("selectionCard").hidden = true; save();
 };
 $("startNavBtn").onclick = startNavigation;
+$("headingModeBtn").onclick = async () => { headingUp = !headingUp; $("headingModeBtn").textContent = headingUp ? "行進方向朝上" : "北方朝上"; if (headingUp) await enableOrientation(); if (!headingUp && map) map.easeTo({ bearing: 0, duration: 400 }); };
 $("skipBtn").onclick = () => { if (navigating) { navIndex++; updateNavigation(); } };
 $("stopNavBtn").onclick = () => finishNavigation(false);
 $("routeName").onchange = event => { const route = active(); if (route) { route.name = event.target.value.trim() || "未命名路線"; save(); } };

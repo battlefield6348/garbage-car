@@ -1,4 +1,4 @@
-const CACHE = "garbage-car-v15";
+const CACHE = "garbage-car-v16";
 const ASSETS = ["./", "./index.html", "./styles.css", "./app.js", "./manifest.webmanifest"];
 
 self.addEventListener("install", event => {

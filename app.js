@@ -285,40 +285,29 @@ function scheduleRoadRoute() {
   routingTimer = setTimeout(() => fetchRoadRoute(request, points.map(p => ({ lat: p.lat, lng: p.lng }))), 450);
 }
 async function fetchRoadRoute(request, points) {
-  const stops=active()?.waypoints||[];
-  const via=active()?.via||{};
-  const getLeg=async coords=>{
-    const coordinates=coords.map(p=>p.lng+","+p.lat).join(";");
-    const url="https://router.project-osrm.org/route/v1/driving/"+coordinates+"?overview=full&geometries=geojson&steps=false&continue_straight=false";
+  try {
+    // Keep the entire itinerary in one OSRM request so the router can
+    // preserve approach direction across consecutive stops.
+    const coordinates=points.map(p=>p.lng+","+p.lat).join(";");
+    const url="https://router.project-osrm.org/route/v1/driving/"+coordinates+
+      "?overview=full&geometries=geojson&steps=false&continue_straight=true";
     const response=await fetch(url);
     if(!response.ok)throw new Error("HTTP "+response.status);
     const data=await response.json();
-    if(data.code!=="Ok"||!data.routes?.[0]?.geometry?.coordinates?.length)throw new Error(data.code||"Invalid route");
-    return data.routes[0];
-  };
-  try{
-    const legs=[];
-    if(navigating)legs.push(await getLeg(points));
-    else for(let i=1;i<stops.length;i++){
-      const from=stops[i-1],to=stops[i];
-      legs.push(await getLeg([from,...(via[viaKey(from,to)]||[]),to]));
-    }
     if(request!==routingRequest)return;
-    if(!legs.length)throw new Error("Empty route");
-    const combined={
-      geometry:{type:"LineString",coordinates:legs.flatMap((leg,i)=>i?leg.geometry.coordinates.slice(1):leg.geometry.coordinates)},
-      distance:legs.reduce((s,l)=>s+l.distance,0),
-      duration:legs.reduce((s,l)=>s+l.duration,0)
-    };
+    const result=data.routes?.[0];
+    if(data.code!=="Ok"||!result?.geometry?.coordinates?.length)
+      throw new Error(data.code||"Invalid route");
     if(!map||!map.isStyleLoaded()){
       roadRouteStatus("等待地圖載入…");
-      map?.once("load",()=>{if(request===routingRequest)drawRoadRoute(combined);});
+      map?.once("load",()=>{if(request===routingRequest)drawRoadRoute(result);});
       return;
     }
-    drawRoadRoute(combined);
+    drawRoadRoute(result);
   }catch(error){
     if(request!==routingRequest)return;
-    clearRoadRoute();roadRouteStatus("無法取得道路路線（公開測試服務可能暫時無法使用）");
+    clearRoadRoute();
+    roadRouteStatus("無法取得道路路線（公開測試服務可能暫時無法使用）");
     console.warn("Road routing",error);
   }
 }

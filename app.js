@@ -53,7 +53,7 @@ function render() {
   $("routeName").value = route.name;
   $("routeMeta").textContent = "MapLibre · 路線資料儲存在此瀏覽器";
   $("waypointCount").textContent = route.waypoints.length + " 個";
-  $("waypointCountTab").textContent = "(" + route.waypoints.length + ")";
+  $("sheetLabel").textContent = route.waypoints.length + " 個停靠點 · 點擊展開";
   $("startNavBtn").disabled = !route.waypoints.length || navigating;
   $("waypointList").innerHTML = "";
   route.waypoints.forEach((point, index) => {
@@ -70,6 +70,7 @@ function render() {
     remove.disabled = navigating; remove.onclick = () => { route.waypoints.splice(index, 1); save(); };
     $("waypointList").append(node);
   });
+  document.querySelector(".workspace").classList.toggle("is-navigating", navigating);
   drawMarkers();
   scheduleRoadRoute();
 }
@@ -308,10 +309,23 @@ $("importInput").onchange = async event => {
 };
 $("newRouteBtn").onclick = create;
 $("emptyNewRouteBtn").onclick = create;
-document.querySelectorAll(".tab").forEach(button => button.onclick = () => {
-  document.querySelectorAll(".tab").forEach(tab => tab.classList.toggle("active", tab === button));
-  document.querySelector(".workspace").classList.toggle("show-queue", button.dataset.tab === "queue");
-});
+const sheet = document.querySelector(".workspace");
+const sheetHandle = $("sheetHandle");
+function setSheetOpen(open) {
+  sheet.classList.toggle("sheet-open", open);
+  sheetHandle.setAttribute("aria-expanded", String(open));
+  $("sheetLabel").textContent = open ? "收合路線隊列" : (active()?.waypoints.length || 0) + " 個停靠點 · 點擊展開";
+  setTimeout(() => map?.resize(), 240);
+}
+sheetHandle.onclick = () => setSheetOpen(!sheet.classList.contains("sheet-open"));
+let touchStartY = null;
+sheetHandle.addEventListener("touchstart", e => { touchStartY = e.touches[0].clientY; }, { passive: true });
+sheetHandle.addEventListener("touchend", e => {
+  if (touchStartY === null) return;
+  const delta = e.changedTouches[0].clientY - touchStartY;
+  touchStartY = null;
+  if (Math.abs(delta) > 30) setSheetOpen(delta < 0);
+}, { passive: true });
 
 render();
 loadMapLibrary();

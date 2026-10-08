@@ -16,6 +16,9 @@ let deviceHeading = null;
 let orientationListening = false;
 let routingRequest = 0;
 let routingTimer = null;
+let lastRoutePosition = null;
+let lastRouteTime = 0;
+let lastRouteTarget = null;
 
 const $ = id => document.getElementById(id);
 const uid = () => globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36) + Math.random().toString(36).slice(2);
@@ -102,7 +105,7 @@ function initMap() {
     map.addControl(new maplibregl.NavigationControl(), "top-right");
     const geo = new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true, showUserLocation: true });
     map.addControl(geo, "top-right");
-    geo.on("geolocate", event => { currentPosition = { lat: event.coords.latitude, lng: event.coords.longitude }; if (navigating) updateNavigation(); });
+    geo.on("geolocate", event => { if (!navigating) currentPosition = { lat: event.coords.latitude, lng: event.coords.longitude, accuracy: event.coords.accuracy }; });
     map.on("load", () => { geo.trigger(); drawMarkers(); scheduleRoadRoute(); });
     map.on("click", event => {
       if (navigating) return;
@@ -165,13 +168,14 @@ function clearRoadRoute() {
 function scheduleRoadRoute() {
   clearTimeout(routingTimer);
   const request = ++routingRequest;
-  const points = active()?.waypoints || [];
+  const points = navigating ? (currentPosition && active()?.waypoints[navIndex] ? [currentPosition, active().waypoints[navIndex]] : []) : (active()?.waypoints || []);
   if (points.length < 2) {
     clearRoadRoute();
+    if (navigating) { roadRouteStatus("等待 GPS 定位…"); return; }
     roadRouteStatus(points.length ? "至少需要兩個停靠點才能計算道路路線" : "新增停靠點後會顯示道路路線");
     return;
   }
-  roadRouteStatus("道路路線計算中…");
+  roadRouteStatus(navigating ? "規劃目前位置至下一站…" : "道路路線計算中…");
   routingTimer = setTimeout(() => fetchRoadRoute(request, points.map(p => ({ lat: p.lat, lng: p.lng }))), 450);
 }
 async function fetchRoadRoute(request, points) {
@@ -243,7 +247,7 @@ async function enableOrientation() {
 
 function startNavigation() {
   const route = active(); if (!route?.waypoints.length) return;
-  navigating = true; navIndex = 0; smoothedHeading = null; $("navPanel").hidden = false; $("selectionCard").hidden = true;
+  navigating = true; navIndex = 0; lastRouteTarget = null; lastRoutePosition = null; currentPosition = null; smoothedHeading = null; $("navPanel").hidden = false; $("selectionCard").hidden = true;
   enableOrientation();
   if (selectedMarker) { selectedMarker.remove(); selectedMarker = null; }
   if (navigator.geolocation) watchId = navigator.geolocation.watchPosition(position => { currentPosition = { lat: position.coords.latitude, lng: position.coords.longitude, heading: position.coords.heading, speed: position.coords.speed, accuracy: position.coords.accuracy }; updateNavigation(); }, error => console.warn("GPS", error.message), { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 });
@@ -258,7 +262,14 @@ function updateNavigation() {
   if (!currentPosition) { $("navDistance").textContent = "等待 GPS…"; return; }
   const distance = distanceMeters(currentPosition, target);
   $("navDistance").textContent = distance < 1000 ? Math.round(distance) + " m" : (distance / 1000).toFixed(1) + " km";
-  if (distance <= ARRIVAL_METERS) { navIndex++; updateNavigation(); return; }
+  if (distance <= ARRIVAL_METERS && Number.isFinite(currentPosition.accuracy) && currentPosition.accuracy <= ARRIVAL_METERS) { navIndex++; lastRouteTarget = null; lastRoutePosition = null; scheduleRoadRoute(); updateNavigation(); return; }
+  const now = Date.now();
+  if (lastRouteTarget !== target.id || !lastRoutePosition || (now - lastRouteTime >= 15000 && distanceMeters(lastRoutePosition, currentPosition) >= 35)) {
+    lastRouteTarget = target.id;
+    lastRoutePosition = { lat: currentPosition.lat, lng: currentPosition.lng };
+    lastRouteTime = now;
+    scheduleRoadRoute();
+  }
   if (map) {
     const gpsHeading = Number.isFinite(currentPosition.heading) && (currentPosition.speed === null || currentPosition.speed > 0.8) ? currentPosition.heading : null;
     const rawHeading = gpsHeading ?? deviceHeading;
@@ -268,7 +279,7 @@ function updateNavigation() {
 }
 
 function finishNavigation(done = false) {
-  navigating = false; smoothedHeading = null;
+  navigating = false; smoothedHeading = null; lastRouteTarget = null; lastRoutePosition = null;
   if (map) map.easeTo({ bearing: 0, duration: 400 });
   if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
   $("navPanel").hidden = true; render(); if (done) alert("路線已完成");

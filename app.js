@@ -165,6 +165,7 @@ function render() {
     remove.disabled = navigating; remove.onclick = () => { route.waypoints.splice(index, 1); save(); };
     $("waypointList").append(node);
     renderViaAfter(point,index,route);
+    if(index>0){const prev=route.waypoints[index-1],key=viaKey(prev,point);const btn=document.createElement("button");btn.className="icon-btn";btn.textContent=route.retrace?.[key]?"取消原路折返":"↩ 原路折返";btn.disabled=navigating;btn.title="此路段沿上一段已行駛道路反向返回；請確認現場允許迴轉";btn.onclick=()=>{route.retrace ||= {};if(route.retrace[key])delete route.retrace[key];else route.retrace[key]=true;save();};node.querySelector(".waypoint-actions").append(btn);}
   });
   document.querySelector(".workspace").classList.toggle("is-navigating", navigating);
   drawMarkers();
@@ -284,29 +285,67 @@ function scheduleRoadRoute() {
   routingTimer = setTimeout(() => fetchRoadRoute(request, points.map(p => ({ lat: p.lat, lng: p.lng }))), 450);
 }
 async function fetchRoadRoute(request, points) {
-  const coordinates = points.map(p => p.lng + "," + p.lat).join(";");
-  const url = "https://router.project-osrm.org/route/v1/driving/" + coordinates + "?overview=full&geometries=geojson&steps=false&continue_straight=false";
+  const route=active();
+  const stops=route?.waypoints||[];
+  const retrace=route?.retrace||{};
+  const via=route?.via||{};
+  const getLeg=async coords=>{
+    const coordinates=coords.map(p=>p.lng+","+p.lat).join(";");
+    const url="https://router.project-osrm.org/route/v1/driving/"+coordinates+"?overview=full&geometries=geojson&steps=false&continue_straight=false";
+    const response=await fetch(url);
+    if(!response.ok)throw new Error("HTTP "+response.status);
+    const data=await response.json();
+    if(data.code!=="Ok"||!data.routes?.[0]?.geometry?.coordinates?.length)throw new Error(data.code||"Invalid route");
+    return data.routes[0];
+  };
   try {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error("HTTP " + response.status);
-    const data = await response.json();
-    if (request !== routingRequest) return;
-    const route = data.routes?.[0];
-    if (data.code !== "Ok" || !route?.geometry?.coordinates?.length) throw new Error(data.code || "Invalid route");
-    if (!map || !map.isStyleLoaded()) {
-      roadRouteStatus("等待地圖載入…");
-      map?.once("load", () => { if (request === routingRequest) drawRoadRoute(route); });
-      return;
+    let legs=[],warning=false;
+    if(navigating){
+      const target=stops[navIndex],prior=stops[navIndex-1];
+      const key=prior&&target?viaKey(prior,target):null;
+      if(key&&retrace[key]&&navIndex>=2){
+        const before=stops[navIndex-2];
+        const inbound=await getLeg([before,...(via[viaKey(before,prior)]||[]),prior]);
+        const reversed=[...inbound.geometry.coordinates].reverse();
+        let nearest=0,minimum=Infinity;
+        reversed.forEach((p,i)=>{const d=distanceMeters({lat:p[1],lng:p[0]},target);if(d<minimum){minimum=d;nearest=i;}});
+        if(minimum<=60){
+          const join=await getLeg([currentPosition,prior]);
+          const trace=reversed.slice(0,nearest+1);
+          legs=[join,{geometry:{coordinates:trace},distance:trace.reduce((sum,p,i)=>i?sum+distanceMeters({lat:p[1],lng:p[0]},{lat:trace[i-1][1],lng:trace[i-1][0]}):0,0),duration:0}];
+          warning=true;
+        }
+      }
+      if(!legs.length)legs=[await getLeg(points)];
+    }else{
+      for(let i=1;i<stops.length;i++){
+        const previous=stops[i-1],target=stops[i],key=viaKey(previous,target);
+        if(retrace[key]&&i>=2&&legs[i-2]){
+          const reversed=[...legs[i-2].geometry.coordinates].reverse();
+          let nearest=0,minimum=Infinity;
+          reversed.forEach((p,j)=>{const d=distanceMeters({lat:p[1],lng:p[0]},target);if(d<minimum){minimum=d;nearest=j;}});
+          if(minimum<=60){
+            const trace=reversed.slice(0,nearest+1);
+            const distance=trace.reduce((sum,p,j)=>j?sum+distanceMeters({lat:p[1],lng:p[0]},{lat:trace[j-1][1],lng:trace[j-1][0]}):0,0);
+            legs.push({geometry:{coordinates:trace},distance,duration:0});warning=true;continue;
+          }
+        }
+        legs.push(await getLeg([previous,...(via[key]||[]),target]));
+      }
     }
-    drawRoadRoute(route);
-  } catch (error) {
-    if (request !== routingRequest) return;
-    clearRoadRoute();
-    roadRouteStatus("無法取得道路路線（公開測試服務可能暫時無法使用）");
-    console.warn("Road routing", error);
+    if(request!==routingRequest)return;
+    if(!legs.length)throw new Error("Empty route");
+    const geometry={type:"LineString",coordinates:legs.flatMap((leg,i)=>i?leg.geometry.coordinates.slice(1):leg.geometry.coordinates)};
+    const combined={geometry,distance:legs.reduce((s,l)=>s+l.distance,0),duration:legs.reduce((s,l)=>s+l.duration,0)};
+    if(!map||!map.isStyleLoaded()){roadRouteStatus("等待地圖載入…");map?.once("load",()=>{if(request===routingRequest)drawRoadRoute(combined,warning);});return;}
+    drawRoadRoute(combined,warning);
+  }catch(error){
+    if(request!==routingRequest)return;
+    clearRoadRoute();roadRouteStatus("無法取得道路路線（公開測試服務可能暫時無法使用）");
+    console.warn("Road routing",error);
   }
 }
-function drawRoadRoute(route) {
+function drawRoadRoute(route, manualRetrace = false) {
   if (!map || !map.isStyleLoaded()) return;
   const data = { type: "Feature", properties: {}, geometry: route.geometry };
   if (map.getSource("road-route")) map.getSource("road-route").setData(data);
@@ -318,7 +357,7 @@ function drawRoadRoute(route) {
       paint: { "line-color": "#2563eb", "line-width": 6, "line-opacity": 0.85 }
     });
   }
-  roadRouteStatus("道路路線 " + (route.distance / 1000).toFixed(1) + " 公里 · 預估 " + Math.round(route.duration / 60) + " 分鐘（不含即時路況）");
+  roadRouteStatus("道路路線 " + (route.distance / 1000).toFixed(1) + " 公里" + (manualRetrace ? " · 含人工指定原路折返（未驗證迴轉合法性；時間不準確）" : " · 預估 " + Math.round(route.duration / 60) + " 分鐘（不含即時路況）"));
 }
 function distanceMeters(a, b) {
   const radius = 6371000, lat = (b.lat - a.lat) * Math.PI / 180, lng = (b.lng - a.lng) * Math.PI / 180;

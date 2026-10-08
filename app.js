@@ -292,6 +292,9 @@ async function enableOrientation() {
 
 function startNavigation() {
   const route = active(); if (!route?.waypoints.length) return;
+  document.body.classList.add("navigation-active");
+  if (document.documentElement.requestFullscreen && !document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+  setTimeout(() => map?.resize(), 120);
   navigating = true; navIndex = 0; lastRouteTarget = null; lastRoutePosition = null; currentPosition = null; smoothedHeading = null; $("navPanel").hidden = false; $("selectionCard").hidden = true;
   enableOrientation();
   if (selectedMarker) { selectedMarker.remove(); selectedMarker = null; }
@@ -324,6 +327,9 @@ function updateNavigation() {
 }
 
 function finishNavigation(done = false) {
+  document.body.classList.remove("navigation-active");
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  setTimeout(() => map?.resize(), 120);
   navigating = false; smoothedHeading = null; lastRouteTarget = null; lastRoutePosition = null;
   if (map) map.easeTo({ bearing: 0, duration: 400 });
   if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }

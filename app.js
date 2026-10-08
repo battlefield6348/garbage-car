@@ -33,11 +33,37 @@ function refreshViaMarkers(){
  viaMarkers.forEach(m=>m.remove());viaMarkers=[];
  if(!map||navigating)return;
  for(const segment of routeSegments())for(const point of active()?.via?.[segment.key]||[]){
-  const marker=new maplibregl.Marker({color:"#f59e0b",draggable:true}).setLngLat([point.lng,point.lat]).addTo(map);
+  const element=document.createElement("div");
+  element.className="route-via-marker";
+  element.textContent="●";
+  element.title="中途點：拖曳微調位置";
+  const marker=new maplibregl.Marker({element,draggable:true}).setLngLat([point.lng,point.lat]).addTo(map);
   marker.on("dragend",()=>{const pos=marker.getLngLat();point.lng=pos.lng;point.lat=pos.lat;save();});
-  marker.getElement().title="自訂途經點：拖曳調整，雙擊刪除";
-  marker.getElement().addEventListener("dblclick",e=>{e.stopPropagation();active().via[segment.key]=active().via[segment.key].filter(v=>v!==point);save();});
   viaMarkers.push(marker);
+ }
+}
+function removeVia(key,index){
+ const route=active();if(!route?.via?.[key])return;
+ route.via[key].splice(index,1);if(!route.via[key].length)delete route.via[key];
+ save();
+}
+function renderViaAfter(point,index,route){
+ const next=route.waypoints[index+1];if(!next)return;
+ const key=viaKey(point,next);
+ for(const [viaIndex,via] of (route.via?.[key]||[]).entries()){
+  const node=$("waypointTemplate").content.firstElementChild.cloneNode(true);
+  node.classList.add("via-waypoint");
+  node.querySelector(".waypoint-index").textContent="↳";
+  node.querySelector("strong").textContent="中途經過點";
+  node.querySelector(".address").textContent=formatCoord(via);
+  node.querySelector('[data-action="google"]').textContent="定位";
+  node.querySelector('[data-action="google"]').onclick=()=>map?.flyTo({center:[via.lng,via.lat],zoom:17});
+  const up=node.querySelector('[data-action="up"]'),down=node.querySelector('[data-action="down"]');
+  const change=delta=>{const items=route.via[key],other=viaIndex+delta;if(other<0||other>=items.length)return;[items[viaIndex],items[other]]=[items[other],items[viaIndex]];save();};
+  up.disabled=navigating||viaIndex===0;up.onclick=()=>change(-1);
+  down.disabled=navigating||viaIndex===(route.via[key].length-1);down.onclick=()=>change(1);
+  const remove=node.querySelector('[data-action="delete"]');remove.disabled=navigating;remove.onclick=()=>removeVia(key,viaIndex);
+  $("waypointList").append(node);
  }
 }
 function insertViaAt(location){
@@ -138,6 +164,7 @@ function render() {
     const remove = node.querySelector('[data-action="delete"]');
     remove.disabled = navigating; remove.onclick = () => { route.waypoints.splice(index, 1); save(); };
     $("waypointList").append(node);
+    renderViaAfter(point,index,route);
   });
   document.querySelector(".workspace").classList.toggle("is-navigating", navigating);
   drawMarkers();

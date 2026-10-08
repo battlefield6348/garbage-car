@@ -16,6 +16,50 @@ let deviceHeading = null;
 let orientationListening = false;
 let routingRequest = 0;
 let routingTimer = null;
+let viaMarkers = [];
+let routeDrag = null;
+function viaKey(a,b){return a.id+"__"+b.id;}
+function routeSegments(){const p=active()?.waypoints||[];return p.slice(1).map((end,i)=>({start:p[i],end,key:viaKey(p[i],end)}));}
+function editViaPoints(){return active()?.via || (active().via={});}
+function routeCoordinates(){
+ const p=active()?.waypoints||[];
+ if(navigating){const target=p[navIndex];if(!target||!currentPosition)return [];
+ const prior=navIndex>0?p[navIndex-1]:null;
+ const via=prior?(active()?.via?.[viaKey(prior,target)]||[]):[];
+ return [currentPosition,...via,target];}
+ const all=[];for(let i=0;i<p.length;i++){if(i)all.push(...(active()?.via?.[viaKey(p[i-1],p[i])]||[]));all.push(p[i]);}return all;
+}
+function refreshViaMarkers(){
+ viaMarkers.forEach(m=>m.remove());viaMarkers=[];
+ if(!map||navigating)return;
+ for(const segment of routeSegments())for(const point of active()?.via?.[segment.key]||[]){
+  const marker=new maplibregl.Marker({color:"#f59e0b",draggable:true}).setLngLat([point.lng,point.lat]).addTo(map);
+  marker.on("dragend",()=>{const pos=marker.getLngLat();point.lng=pos.lng;point.lat=pos.lat;save();});
+  marker.getElement().title="自訂途經點：拖曳調整，雙擊刪除";
+  marker.getElement().addEventListener("dblclick",e=>{e.stopPropagation();active().via[segment.key]=active().via[segment.key].filter(v=>v!==point);save();});
+  viaMarkers.push(marker);
+ }
+}
+function insertViaAt(location){
+ if(navigating||!active()||active().waypoints.length<2)return;
+ const segments=routeSegments();
+ let best=null,dist=Infinity;
+ for(const seg of segments){const d=distanceMeters(location,seg.start)+distanceMeters(location,seg.end)-distanceMeters(seg.start,seg.end);if(d<dist){dist=d;best=seg;}}
+ if(!best)return;
+ (editViaPoints()[best.key] ||= []).push({lat:location.lat,lng:location.lng});
+ save();
+}
+function setupRouteDragging(){
+ if(!map)return;
+ let start=null,timer=null,armed=false;
+ const hit=e=>map.getLayer("road-route-line")&&map.queryRenderedFeatures(e.point,{layers:["road-route-line"]}).length>0;
+ map.on("touchstart",e=>{if(navigating||!hit(e)||e.originalEvent.touches.length!==1)return;start=e.point;armed=false;clearTimeout(timer);timer=setTimeout(()=>{armed=true;map.dragPan.disable();},450);});
+ map.on("touchmove",e=>{if(start&&!armed&&Math.hypot(e.point.x-start.x,e.point.y-start.y)>12){clearTimeout(timer);start=null;}});
+ map.on("touchend",e=>{clearTimeout(timer);if(!armed)return;armed=false;start=null;map.dragPan.enable();insertViaAt({lng:e.lngLat.lng,lat:e.lngLat.lat});});
+ map.on("mousedown",e=>{if(navigating||!hit(e))return;start=e.point;map.dragPan.disable();});
+ map.on("mouseup",e=>{if(!start)return;const moved=Math.hypot(e.point.x-start.x,e.point.y-start.y)>8;start=null;map.dragPan.enable();if(moved)insertViaAt({lng:e.lngLat.lng,lat:e.lngLat.lat});});
+}
+
 let lastRoutePosition = null;
 let lastRouteTime = 0;
 let lastRouteTarget = null;
@@ -75,6 +119,7 @@ function render() {
   });
   document.querySelector(".workspace").classList.toggle("is-navigating", navigating);
   drawMarkers();
+  refreshViaMarkers();
   scheduleRoadRoute();
 }
 
@@ -106,7 +151,7 @@ function initMap() {
     const geo = new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true, showUserLocation: true });
     map.addControl(geo, "top-right");
     geo.on("geolocate", event => { if (!navigating) currentPosition = { lat: event.coords.latitude, lng: event.coords.longitude, accuracy: event.coords.accuracy }; });
-    map.on("load", () => { geo.trigger(); drawMarkers(); scheduleRoadRoute(); });
+    map.on("load", () => { geo.trigger(); drawMarkers(); refreshViaMarkers(); scheduleRoadRoute(); setupRouteDragging(); });
     map.on("click", event => {
       if (navigating) return;
       select({
@@ -168,7 +213,7 @@ function clearRoadRoute() {
 function scheduleRoadRoute() {
   clearTimeout(routingTimer);
   const request = ++routingRequest;
-  const points = navigating ? (currentPosition && active()?.waypoints[navIndex] ? [currentPosition, active().waypoints[navIndex]] : []) : (active()?.waypoints || []);
+  const points = routeCoordinates();
   if (points.length < 2) {
     clearRoadRoute();
     if (navigating) { roadRouteStatus("等待 GPS 定位…"); return; }

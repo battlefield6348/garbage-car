@@ -197,7 +197,17 @@ function drawMarkers() {
   const route = active(); if (!route) return;
   route.waypoints.forEach((point, index) => {
     const element = document.createElement("div"); element.className = "number-marker"; element.textContent = index + 1;
-    markers.push(new maplibregl.Marker({ element }).setLngLat([point.lng, point.lat]).addTo(map));
+    const marker = new maplibregl.Marker({ element, draggable: !navigating }).setLngLat([point.lng, point.lat]).addTo(map);
+    marker.on("dragend", () => {
+      if (navigating) return;
+      const position = marker.getLngLat();
+      point.lat = position.lat;
+      point.lng = position.lng;
+      point.address = formatCoord(point);
+      save();
+    });
+    element.title = navigating ? "導航期間不可移動停靠點" : "拖曳微調停靠點位置";
+    markers.push(marker);
   });
 }
 

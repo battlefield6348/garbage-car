@@ -51,13 +51,35 @@ function insertViaAt(location){
 }
 function setupRouteDragging(){
  if(!map)return;
- let start=null,timer=null,armed=false;
- const hit=e=>map.getLayer("road-route-line")&&map.queryRenderedFeatures(e.point,{layers:["road-route-line"]}).length>0;
- map.on("touchstart",e=>{if(navigating||!hit(e)||e.originalEvent.touches.length!==1)return;start=e.point;armed=false;clearTimeout(timer);timer=setTimeout(()=>{armed=true;map.dragPan.disable();},450);});
- map.on("touchmove",e=>{if(start&&!armed&&Math.hypot(e.point.x-start.x,e.point.y-start.y)>12){clearTimeout(timer);start=null;}});
- map.on("touchend",e=>{clearTimeout(timer);if(!armed)return;armed=false;start=null;map.dragPan.enable();insertViaAt({lng:e.lngLat.lng,lat:e.lngLat.lat});});
- map.on("mousedown",e=>{if(navigating||!hit(e))return;start=e.point;map.dragPan.disable();});
- map.on("mouseup",e=>{if(!start)return;const moved=Math.hypot(e.point.x-start.x,e.point.y-start.y)>8;start=null;map.dragPan.enable();if(moved)insertViaAt({lng:e.lngLat.lng,lat:e.lngLat.lat});});
+ let drag=null;
+ const onLine=e=>map.getLayer("road-route-hit")&&map.queryRenderedFeatures(e.point,{layers:["road-route-hit"]}).length>0;
+ const begin=e=>{
+  if(navigating||!onLine(e))return;
+  drag={start:e.point,last:e.lngLat,moved:false};
+  map.dragPan.disable();
+  map.getCanvas().style.cursor="grabbing";
+ };
+ const move=e=>{
+  if(!drag)return;
+  drag.last=e.lngLat;
+  if(Math.hypot(e.point.x-drag.start.x,e.point.y-drag.start.y)>8)drag.moved=true;
+ };
+ const finish=e=>{
+  if(!drag)return;
+  const d=drag;drag=null;
+  map.dragPan.enable();map.getCanvas().style.cursor="";
+  if(d.moved)insertViaAt({lng:(e?.lngLat||d.last).lng,lat:(e?.lngLat||d.last).lat});
+ };
+ map.on("mousedown",begin);map.on("mousemove",move);map.on("mouseup",finish);
+ map.on("touchstart",e=>{
+  if(navigating||e.originalEvent.touches.length!==1||!onLine(e))return;
+  drag={start:e.point,last:e.lngLat,moved:false};
+  map.dragPan.disable();
+ });
+ map.on("touchmove",move);map.on("touchend",finish);
+ map.on("touchcancel",()=>{drag=null;map.dragPan.enable();});
+ map.on("mouseenter","road-route-hit",()=>{if(!navigating)map.getCanvas().style.cursor="grab";});
+ map.on("mouseleave","road-route-hit",()=>{if(!drag)map.getCanvas().style.cursor="";});
 }
 
 let lastRoutePosition = null;
@@ -217,6 +239,7 @@ function roadRouteStatus(message) {
 }
 function clearRoadRoute() {
   if (!map || !map.isStyleLoaded()) return;
+  if (map.getLayer("road-route-hit")) map.removeLayer("road-route-hit");
   if (map.getLayer("road-route-line")) map.removeLayer("road-route-line");
   if (map.getSource("road-route")) map.removeSource("road-route");
 }
@@ -235,7 +258,7 @@ function scheduleRoadRoute() {
 }
 async function fetchRoadRoute(request, points) {
   const coordinates = points.map(p => p.lng + "," + p.lat).join(";");
-  const url = "https://router.project-osrm.org/route/v1/driving/" + coordinates + "?overview=full&geometries=geojson&steps=false";
+  const url = "https://router.project-osrm.org/route/v1/driving/" + coordinates + "?overview=full&geometries=geojson&steps=false&continue_straight=false";
   try {
     const response = await fetch(url);
     if (!response.ok) throw new Error("HTTP " + response.status);
@@ -262,6 +285,7 @@ function drawRoadRoute(route) {
   if (map.getSource("road-route")) map.getSource("road-route").setData(data);
   else {
     map.addSource("road-route", { type: "geojson", data });
+    map.addLayer({ id: "road-route-hit", type: "line", source: "road-route", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#2563eb", "line-width": 28, "line-opacity": 0.015 } });
     map.addLayer({ id: "road-route-line", type: "line", source: "road-route",
       layout: { "line-join": "round", "line-cap": "round" },
       paint: { "line-color": "#2563eb", "line-width": 6, "line-opacity": 0.85 }

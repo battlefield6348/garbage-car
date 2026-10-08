@@ -16,3 +16,5 @@
   .workspace.is-navigating .selection-card{display:none!important}
 }
 @media(min-width:801px){.sheet-handle{display:none}}
+
+@media(max-width:800px){body.navigation-active{overflow:hidden}body.navigation-active .workspace{position:fixed!important;inset:0!important;width:100vw!important;height:100dvh!important;min-height:0!important;margin:0!important;border-radius:0!important;z-index:1000!important}body.navigation-active .map-pane{height:100%!important;width:100%!important;border-radius:0!important;border:0!important}body.navigation-active .waypoint-column{display:none!important}body.navigation-active .nav-panel{top:max(12px,env(safe-area-inset-top));right:12px;left:12px;max-width:none}body.navigation-active .nav-panel button{flex:1 1 auto}}

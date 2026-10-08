@@ -441,6 +441,8 @@ function googleNav(point) {
   window.open(url, "_blank", "noopener");
 }
 
+function cancelSelected(){selected=undefined;if(selectedMarker){selectedMarker.remove();selectedMarker=null;} $("selectionCard").hidden=true;}
+$("cancelSelectedBtn").onclick = cancelSelected;
 $("addSelectedBtn").onclick = () => {
   const route = active(); if (!route || !selected) return;
   route.waypoints.push({ id: uid(), ...selected }); selected = undefined;

@@ -14,6 +14,8 @@ let headingUp = true;
 let smoothedHeading = null;
 let deviceHeading = null;
 let orientationListening = false;
+let routingRequest = 0;
+let routingTimer = null;
 
 const $ = id => document.getElementById(id);
 const uid = () => globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36) + Math.random().toString(36).slice(2);
@@ -69,6 +71,7 @@ function render() {
     $("waypointList").append(node);
   });
   drawMarkers();
+  scheduleRoadRoute();
 }
 
 function formatCoord(point) { return point.lat.toFixed(5) + ", " + point.lng.toFixed(5); }
@@ -99,7 +102,7 @@ function initMap() {
     const geo = new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true, showUserLocation: true });
     map.addControl(geo, "top-right");
     geo.on("geolocate", event => { currentPosition = { lat: event.coords.latitude, lng: event.coords.longitude }; if (navigating) updateNavigation(); });
-    map.on("load", () => { geo.trigger(); drawMarkers(); });
+    map.on("load", () => { geo.trigger(); drawMarkers(); scheduleRoadRoute(); });
     map.on("click", event => {
       if (navigating) return;
       select({
@@ -149,6 +152,63 @@ function drawMarkers() {
   });
 }
 
+function roadRouteStatus(message) {
+  const el = $("roadRouteStatus");
+  if (el) el.textContent = message;
+}
+function clearRoadRoute() {
+  if (!map || !map.isStyleLoaded()) return;
+  if (map.getLayer("road-route-line")) map.removeLayer("road-route-line");
+  if (map.getSource("road-route")) map.removeSource("road-route");
+}
+function scheduleRoadRoute() {
+  clearTimeout(routingTimer);
+  const request = ++routingRequest;
+  const points = active()?.waypoints || [];
+  if (points.length < 2) {
+    clearRoadRoute();
+    roadRouteStatus(points.length ? "至少需要兩個停靠點才能計算道路路線" : "新增停靠點後會顯示道路路線");
+    return;
+  }
+  roadRouteStatus("道路路線計算中…");
+  routingTimer = setTimeout(() => fetchRoadRoute(request, points.map(p => ({ lat: p.lat, lng: p.lng }))), 450);
+}
+async function fetchRoadRoute(request, points) {
+  const coordinates = points.map(p => p.lng + "," + p.lat).join(";");
+  const url = "https://router.project-osrm.org/route/v1/driving/" + coordinates + "?overview=full&geometries=geojson&steps=false";
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("HTTP " + response.status);
+    const data = await response.json();
+    if (request !== routingRequest) return;
+    const route = data.routes?.[0];
+    if (data.code !== "Ok" || !route?.geometry?.coordinates?.length) throw new Error(data.code || "Invalid route");
+    if (!map || !map.isStyleLoaded()) {
+      roadRouteStatus("等待地圖載入…");
+      map?.once("load", () => { if (request === routingRequest) drawRoadRoute(route); });
+      return;
+    }
+    drawRoadRoute(route);
+  } catch (error) {
+    if (request !== routingRequest) return;
+    clearRoadRoute();
+    roadRouteStatus("無法取得道路路線（公開測試服務可能暫時無法使用）");
+    console.warn("Road routing", error);
+  }
+}
+function drawRoadRoute(route) {
+  if (!map || !map.isStyleLoaded()) return;
+  const data = { type: "Feature", properties: {}, geometry: route.geometry };
+  if (map.getSource("road-route")) map.getSource("road-route").setData(data);
+  else {
+    map.addSource("road-route", { type: "geojson", data });
+    map.addLayer({ id: "road-route-line", type: "line", source: "road-route",
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: { "line-color": "#2563eb", "line-width": 6, "line-opacity": 0.85 }
+    });
+  }
+  roadRouteStatus("道路路線 " + (route.distance / 1000).toFixed(1) + " 公里 · 預估 " + Math.round(route.duration / 60) + " 分鐘（不含即時路況）");
+}
 function distanceMeters(a, b) {
   const radius = 6371000, lat = (b.lat - a.lat) * Math.PI / 180, lng = (b.lng - a.lng) * Math.PI / 180;
   const value = Math.sin(lat / 2) ** 2 + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(lng / 2) ** 2;

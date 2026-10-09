@@ -95,3 +95,54 @@ body.navigation-active .address-search,.workspace.is-navigating .address-search{
  .editor-head{top:120px!important}
  .map-toolbar{top:184px!important}
 }
+
+
+/* v27: one immersive map canvas on desktop and mobile */
+html,body{width:100%;height:100%;overflow:hidden}
+.layout,.editor,#editorContent,.workspace,.map-pane{position:static;margin:0;padding:0;max-width:none}
+.layout{display:block;min-height:0}
+.workspace{position:fixed!important;inset:0!important;width:100vw!important;height:100dvh!important;min-height:0!important;display:block!important;overflow:hidden!important;border:0!important;border-radius:0!important;z-index:1}
+.map-pane{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;min-height:0!important;border:0!important;border-radius:0!important;overflow:hidden!important}
+#map{position:absolute;inset:0}
+.topbar{position:fixed!important;z-index:24;top:12px;left:12px;right:auto;width:auto;min-height:0;display:flex!important;align-items:center!important;flex-direction:row!important;gap:12px;padding:9px 12px!important;background:#ffffffee;color:#111827;border:1px solid #e5e7eb;border-radius:14px;box-shadow:0 3px 16px #0002}
+.topbar strong{font-size:16px}.topbar span{display:none}
+.topbar .actions{display:flex;width:auto;gap:5px;overflow:visible}
+.topbar .actions>*{white-space:nowrap}
+.topbar .ghost{background:#fff;color:#374151;border-color:#d1d5db}
+.topbar .actions button,.topbar .actions label{font-size:13px;padding:8px;min-height:36px}
+.routes-panel{position:fixed!important;z-index:26;top:76px;left:12px;width:min(340px,calc(100vw - 24px));max-height:min(65dvh,650px);overflow-y:auto;background:#fffffff5;border:1px solid #e5e7eb;border-radius:16px;box-shadow:0 6px 24px #0003;padding:15px!important;display:none!important}
+body.routes-open .routes-panel{display:block!important}
+.route-list{display:grid;overflow:visible}
+.route-card{min-width:0}
+.editor-head{position:fixed!important;z-index:12;top:12px;left:50%;transform:translateX(-50%);width:min(360px,28vw);display:flex!important;gap:8px;background:#fffffff0;padding:9px 12px!important;border-radius:14px;box-shadow:0 3px 14px #0002}
+.editor-head .route-name{font-size:17px;width:100%;min-width:0}
+.editor-head #routeMeta{display:none}
+.editor-head #deleteRouteBtn{white-space:nowrap}
+.address-search{position:fixed!important;z-index:20;top:12px;left:auto;right:80px;width:min(420px,28vw)}
+.map-toolbar{display:flex!important;position:fixed!important;z-index:23;top:90px;right:12px;flex-direction:column;gap:8px}
+.map-toolbar button{background:#fff;color:#111827;border:1px solid #e5e7eb;box-shadow:0 2px 10px #0002;border-radius:12px;padding:10px}
+.waypoint-column{position:fixed!important;z-index:18;top:145px;right:12px;left:auto;bottom:auto;width:min(360px,calc(100vw - 24px));height:auto;max-height:calc(100dvh - 165px);overflow-y:auto;display:none!important;transform:none!important;background:#fffffff5;box-shadow:0 4px 20px #0003;border-radius:16px;padding:14px}
+.workspace.sheet-open .waypoint-column{display:block!important}
+.sheet-handle{display:none!important}
+.selection-card{position:fixed;z-index:22;bottom:22px;left:50%;right:auto;transform:translateX(-50%);width:min(650px,calc(100vw - 30px))}
+.empty-state{position:fixed;z-index:22;top:50%;left:50%;transform:translate(-50%,-50%);width:min(440px,calc(100vw - 30px));margin:0;padding:24px;background:#fffffff2;border-radius:18px;box-shadow:0 4px 20px #0003}
+.nav-panel{position:fixed;z-index:35;top:12px;left:50%;right:auto;transform:translateX(-50%);width:min(560px,calc(100vw - 24px));max-width:none}
+body.navigation-active .topbar,body.navigation-active .editor-head,body.navigation-active .routes-panel,body.navigation-active .map-toolbar,body.navigation-active .waypoint-column{display:none!important}
+@media(max-width:1100px){
+ .editor-head{top:66px!important;left:12px;transform:none;width:min(350px,calc(100vw - 96px))}
+ .address-search{top:124px;left:12px;right:auto;width:min(420px,calc(100vw - 95px))}
+ .map-toolbar{top:124px!important;right:12px}
+ .waypoint-column{top:225px;max-height:calc(100dvh - 240px)}
+}
+@media(max-width:800px){
+ .topbar{top:max(8px,env(safe-area-inset-top));left:10px;right:10px;width:auto;justify-content:space-between}
+ .editor-head{top:64px!important;left:10px!important;right:10px;width:auto;transform:none}
+ .address-search{top:122px!important;left:10px;right:70px;width:auto}
+ .map-toolbar{top:187px!important;right:10px}
+ .routes-panel{top:120px;left:10px;right:10px;width:auto}
+ .waypoint-column{top:auto;bottom:0;left:0;right:0;width:100%;max-height:75dvh;border-radius:18px 18px 0 0}
+ .workspace.sheet-open .waypoint-column{display:block!important}
+ .sheet-handle{display:flex!important}
+ .selection-card{bottom:16px}
+ .nav-panel{top:max(12px,env(safe-area-inset-top))!important}
+}

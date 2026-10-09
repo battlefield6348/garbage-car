@@ -129,7 +129,7 @@ function load() {
 
 function active() { return routes.find(route => route.id === activeId); }
 function save() { localStorage.setItem(STORE, JSON.stringify(routes)); render(); }
-function invalidateFixedRoute(){const route=active();if(route)route.fixedGeometry=null;}
+function invalidateFixedRoute(){const route=active();if(route)route.fixedGeometry=null;fixedRouteDraft=null;}
 
 function create() {
   const route = { id: uid(), name: "未命名路線", waypoints: [], createdAt: new Date().toISOString() };
@@ -148,6 +148,7 @@ function render() {
     $("routeList").append(node);
   });
   const route = active();
+  fixedRouteDraft = null;
   $("emptyState").hidden = !!route;
   $("editorContent").hidden = !route;
   if (!route) return;

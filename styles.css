@@ -80,3 +80,18 @@
  body.navigation-active .nav-panel{top:calc(env(safe-area-inset-top) + 12px)!important}
  body.navigation-active .maplibregl-ctrl-top-right{top:calc(env(safe-area-inset-top) + 200px)}
 }
+
+.address-search{position:absolute;z-index:15;left:12px;top:12px;width:min(430px,calc(100% - 110px));pointer-events:auto}
+.address-search form{display:flex;gap:5px;background:#fff;padding:6px;border-radius:13px;box-shadow:0 2px 12px #0003}
+.address-search input{min-width:0;flex:1;border:0;padding:9px;font-size:16px;outline:none;background:#fff;color:#111827}
+.address-search button{white-space:nowrap}
+.search-results{margin-top:6px;max-height:42dvh;overflow-y:auto;background:#fff;border-radius:12px;box-shadow:0 3px 15px #0004}
+.search-results p{padding:12px;margin:0}
+.search-results .search-result{display:block;width:100%;text-align:left;border-radius:0;border-bottom:1px solid #eee;padding:12px;background:#fff;color:#111827;white-space:normal;font-size:14px}
+.search-results .search-result:hover{background:#f3f4f6}
+body.navigation-active .address-search,.workspace.is-navigating .address-search{display:none}
+@media(max-width:800px){
+ .address-search{position:fixed;top:max(66px,calc(env(safe-area-inset-top) + 58px));left:10px;right:70px;width:auto;z-index:32}
+ .editor-head{top:120px!important}
+ .map-toolbar{top:184px!important}
+}

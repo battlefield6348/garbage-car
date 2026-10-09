@@ -18,6 +18,11 @@ let routingRequest = 0;
 let routingTimer = null;
 let viaMarkers = [];
 let routeDrag = null;
+let wakeLock = null;
+let deviationCount = 0;
+let lastDeviationAlert = 0;
+let fixedProgress = 0;
+let fixedRouteDraft = null;
 function viaKey(a,b){return a.id+"__"+b.id;}
 function routeSegments(){const p=active()?.waypoints||[];return p.slice(1).map((end,i)=>({start:p[i],end,key:viaKey(p[i],end)}));}
 function editViaPoints(){return active()?.via || (active().via={});}
@@ -124,6 +129,7 @@ function load() {
 
 function active() { return routes.find(route => route.id === activeId); }
 function save() { localStorage.setItem(STORE, JSON.stringify(routes)); render(); }
+function invalidateFixedRoute(){const route=active();if(route)route.fixedGeometry=null;}
 
 function create() {
   const route = { id: uid(), name: "未命名路線", waypoints: [], createdAt: new Date().toISOString() };
@@ -150,6 +156,9 @@ function render() {
   $("waypointCount").textContent = route.waypoints.length + " 個";
   $("sheetLabel").textContent = route.waypoints.length + " 個停靠點 · 點擊展開";
   $("startNavBtn").disabled = !route.waypoints.length || navigating;
+  $("modeBtn").textContent = "模式：" + (route.mode==="dynamic"?"動態規劃":"固定路線");
+  $("saveFixedBtn").disabled = navigating || !fixedRouteDraft;
+  $("saveFixedBtn").textContent = route.fixedGeometry ? "更新固定路線" : "儲存固定路線";
   $("waypointList").innerHTML = "";
   route.waypoints.forEach((point, index) => {
     const node = $("waypointTemplate").content.firstElementChild.cloneNode(true);
@@ -186,6 +195,7 @@ function render() {
 
 function formatCoord(point) { return point.lat.toFixed(5) + ", " + point.lng.toFixed(5); }
 function move(from, to) {
+  invalidateFixedRoute();
   const route = active(); if (!route) return;
   [route.waypoints[from], route.waypoints[to]] = [route.waypoints[to], route.waypoints[from]]; save();
 }
@@ -262,6 +272,7 @@ function drawMarkers() {
     marker.on("dragend", () => {
       if (navigating) return;
       const position = marker.getLngLat();
+      invalidateFixedRoute();
       point.lat = position.lat;
       point.lng = position.lng;
       point.address = formatCoord(point);
@@ -285,6 +296,12 @@ function clearRoadRoute() {
 function scheduleRoadRoute() {
   clearTimeout(routingTimer);
   const request = ++routingRequest;
+  const fixed = active()?.mode !== "dynamic" && active()?.fixedGeometry;
+  if (navigating && fixed) {
+    clearTimeout(routingTimer);
+    showFixedRoute();
+    return;
+  }
   const points = routeCoordinates();
   if (points.length < 2) {
     clearRoadRoute();
@@ -349,7 +366,10 @@ async function fetchRoadRoute(request, points) {
 }
 function drawRoadRoute(route, manualRetrace = false) {
   if (!map || !map.isStyleLoaded()) return;
-  const data = { type: "Feature", properties: {}, geometry: route.geometry };
+  fixedRouteDraft = structuredClone(route.geometry);
+  const stored = active()?.fixedGeometry;
+  const geometry = !navigating && active()?.mode !== "dynamic" && stored ? stored : route.geometry;
+  const data = { type: "Feature", properties: {}, geometry };
   if (map.getSource("road-route")) map.getSource("road-route").setData(data);
   else {
     map.addSource("road-route", { type: "geojson", data });
@@ -361,6 +381,49 @@ function drawRoadRoute(route, manualRetrace = false) {
   }
   roadRouteStatus("道路路線 " + (route.distance / 1000).toFixed(1) + " 公里 · 預估 " + Math.round(route.duration / 60) + " 分鐘（不含即時路況）" + (manualRetrace ? " · 折返候選點未驗證迴轉合法性" : ""));
 }
+function showFixedRoute(){
+ const geometry=active()?.fixedGeometry;
+ if(!geometry||!map||!map.isStyleLoaded())return;
+ const data={type:"Feature",properties:{},geometry};
+ if(map.getSource("road-route"))map.getSource("road-route").setData(data);
+ else drawRoadRoute({geometry,distance:0,duration:0});
+ roadRouteStatus("固定路線導航：不會自動更改預設道路");
+}
+function distanceToFixedRoute(position){
+ const coordinates=active()?.fixedGeometry?.coordinates||[];
+ if(coordinates.length<2)return Infinity;
+ const latScale=111320,lonScale=Math.cos(position.lat*Math.PI/180)*111320;
+ let min=Infinity,closest=fixedProgress;
+ for(let i=Math.max(0,fixedProgress-10);i<coordinates.length-1;i++){
+  const a=coordinates[i],b=coordinates[i+1];
+  const ax=(a[0]-position.lng)*lonScale,ay=(a[1]-position.lat)*latScale;
+  const bx=(b[0]-position.lng)*lonScale,by=(b[1]-position.lat)*latScale;
+  const dx=bx-ax,dy=by-ay,t=Math.max(0,Math.min(1,-(ax*dx+ay*dy)/(dx*dx+dy*dy||1)));
+  const d=Math.hypot(ax+t*dx,ay+t*dy);
+  if(d<min){min=d;closest=i;}
+ }
+ if(min<35)fixedProgress=Math.max(fixedProgress,closest);
+ return min;
+}
+async function acquireWakeLock(){
+ if(!navigating||document.visibilityState!=="visible")return;
+ try{
+  if(!("wakeLock" in navigator))throw Error("unsupported");
+  wakeLock=await navigator.wakeLock.request("screen");
+  $("wakeStatus").textContent="螢幕保持開啟";
+ }catch(error){
+  $("wakeStatus").textContent="無法保持亮屏，請檢查瀏覽器與省電設定";
+  console.warn("Wake Lock",error);
+ }
+}
+function releaseWakeLock(){
+ if(wakeLock){wakeLock.release().catch(()=>{});wakeLock=null;}
+ $("wakeStatus").textContent="";
+}
+document.addEventListener("visibilitychange",()=>{
+ if(navigating&&document.visibilityState==="visible")acquireWakeLock();
+});
+
 function distanceMeters(a, b) {
   const radius = 6371000, lat = (b.lat - a.lat) * Math.PI / 180, lng = (b.lng - a.lng) * Math.PI / 180;
   const value = Math.sin(lat / 2) ** 2 + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(lng / 2) ** 2;
@@ -397,7 +460,7 @@ function startNavigation() {
   document.body.classList.add("navigation-active");
   if (document.documentElement.requestFullscreen && !document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
   setTimeout(() => map?.resize(), 120);
-  navigating = true; navIndex = 0; lastRouteTarget = null; lastRoutePosition = null; currentPosition = null; smoothedHeading = null; $("navPanel").hidden = false; $("selectionCard").hidden = true;
+  navigating = true; deviationCount=0;fixedProgress=0;lastDeviationAlert=0; $("navAlert").textContent=""; acquireWakeLock(); navIndex = 0; lastRouteTarget = null; lastRoutePosition = null; currentPosition = null; smoothedHeading = null; $("navPanel").hidden = false; $("selectionCard").hidden = true;
   enableOrientation();
   if (selectedMarker) { selectedMarker.remove(); selectedMarker = null; }
   if (navigator.geolocation) watchId = navigator.geolocation.watchPosition(position => { currentPosition = { lat: position.coords.latitude, lng: position.coords.longitude, heading: position.coords.heading, speed: position.coords.speed, accuracy: position.coords.accuracy }; updateNavigation(); }, error => console.warn("GPS", error.message), { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 });
@@ -410,6 +473,17 @@ function updateNavigation() {
   $("navProgress").textContent = "第 " + (navIndex + 1) + " / " + route.waypoints.length + " 站";
   $("navTarget").textContent = target.name;
   if (!currentPosition) { $("navDistance").textContent = "等待 GPS…"; return; }
+  const fixed = route.mode!=="dynamic" && route.fixedGeometry;
+  if(fixed){
+    const off=distanceToFixedRoute(currentPosition);
+    const accuracy=currentPosition.accuracy;
+    if(Number.isFinite(accuracy)&&accuracy<=35&&off>Math.max(45,accuracy*1.8))deviationCount++;
+    else deviationCount=0;
+    if(deviationCount>=3){
+      $("navAlert").textContent="已偏離固定路線約 "+Math.round(off)+" 公尺，請注意行車安全";
+      if(Date.now()-lastDeviationAlert>30000){lastDeviationAlert=Date.now();navigator.vibrate?.([200,100,200]);}
+    }else $("navAlert").textContent="";
+  }
   const distance = distanceMeters(currentPosition, target);
   $("navDistance").textContent = distance < 1000 ? Math.round(distance) + " m" : (distance / 1000).toFixed(1) + " km";
   if (distance <= ARRIVAL_METERS && Number.isFinite(currentPosition.accuracy) && currentPosition.accuracy <= ARRIVAL_METERS) { navIndex++; lastRouteTarget = null; lastRoutePosition = null; scheduleRoadRoute(); updateNavigation(); return; }
@@ -432,6 +506,7 @@ function finishNavigation(done = false) {
   document.body.classList.remove("navigation-active");
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   setTimeout(() => map?.resize(), 120);
+  releaseWakeLock();$("navAlert").textContent="";
   navigating = false; smoothedHeading = null; lastRouteTarget = null; lastRoutePosition = null;
   if (map) map.easeTo({ bearing: 0, duration: 400 });
   if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
@@ -459,11 +534,16 @@ $("addTurnCandidateBtn").onclick = () => {
 
 $("addSelectedBtn").onclick = () => {
   const route = active(); if (!route || !selected) return;
+  invalidateFixedRoute();
   route.waypoints.push({ id: uid(), ...selected }); selected = undefined;
   if (selectedMarker) { selectedMarker.remove(); selectedMarker = null; }
   $("selectionCard").hidden = true; save();
 };
 $("startNavBtn").onclick = startNavigation;
+$("saveFixedBtn").onclick=()=>{const route=active();if(!route||!fixedRouteDraft)return;route.fixedGeometry=structuredClone(fixedRouteDraft);route.mode="fixed";save();};
+$("modeBtn").onclick=()=>{const route=active();if(!route)return;route.mode=route.mode==="dynamic"?"fixed":"dynamic";save();};
+$("routesToggleBtn").onclick=()=>document.body.classList.toggle("routes-open");
+$("queueToggleBtn").onclick=()=>setSheetOpen(!sheet.classList.contains("sheet-open"));
 $("headingModeBtn").onclick = async () => { headingUp = !headingUp; $("headingModeBtn").textContent = headingUp ? "行進方向朝上" : "北方朝上"; if (headingUp) await enableOrientation(); if (!headingUp && map) map.easeTo({ bearing: 0, duration: 400 }); };
 $("skipBtn").onclick = () => { if (navigating) { navIndex++; updateNavigation(); } };
 $("stopNavBtn").onclick = () => finishNavigation(false);

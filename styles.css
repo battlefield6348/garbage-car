@@ -148,22 +148,26 @@ body.navigation-active .topbar,body.navigation-active .editor-head,body.navigati
 }
 
 
-/* v28 desktop: keep the right controls in separate non-overlapping zones */
+/* v29: map-first controls; map widgets follow the panel state */
 @media(min-width:1101px){
- .address-search{top:12px!important;right:70px!important;left:auto!important;width:min(410px,calc(100vw - 800px))!important;min-width:260px}
- .map-toolbar{top:82px!important;right:12px!important;z-index:29!important}
- .waypoint-column{top:176px!important;right:12px!important;left:auto!important;width:360px!important;max-height:calc(100dvh - 192px)!important;z-index:18!important}
- .workspace.sheet-open .waypoint-column{display:block!important}
- .maplibregl-ctrl-top-right{top:175px!important;right:380px!important}
- .editor-head{width:min(320px,24vw)!important}
+ .topbar{top:14px!important;left:14px!important}
+ .editor-head{top:14px!important;left:50%!important;transform:translateX(-50%)!important;width:min(320px,24vw)!important}
+ .address-search{top:14px!important;right:14px!important;left:auto!important;width:min(410px,29vw)!important;min-width:250px}
+ .map-toolbar{top:82px!important;right:14px!important;display:flex!important;flex-direction:row!important;gap:8px!important}
+ .waypoint-column{top:140px!important;right:14px!important;left:auto!important;width:360px!important;max-height:calc(100dvh - 156px)!important}
+ .maplibregl-ctrl-top-right{top:auto!important;bottom:32px!important;right:14px!important;left:auto!important;transition:right .18s ease}
+ .workspace.sheet-open .maplibregl-ctrl-top-right{right:390px!important}
 }
 @media(min-width:801px) and (max-width:1100px){
- .address-search{top:124px!important;right:80px!important;left:auto!important;width:min(420px,calc(100vw - 490px))!important}
- .map-toolbar{top:194px!important}
- .waypoint-column{top:284px!important;max-height:calc(100dvh - 300px)!important}
- .maplibregl-ctrl-top-right{top:282px!important;right:380px!important}
+ .address-search{top:124px!important;right:14px!important;left:auto!important;width:min(410px,calc(100vw - 460px))!important}
+ .map-toolbar{top:194px!important;right:14px!important;flex-direction:row!important}
+ .waypoint-column{top:250px!important;right:14px!important;max-height:calc(100dvh - 266px)!important}
+ .maplibregl-ctrl-top-right{top:auto!important;bottom:24px!important;right:14px!important;left:auto!important}
+ .workspace.sheet-open .maplibregl-ctrl-top-right{right:390px!important}
 }
 @media(max-width:800px){
- .maplibregl-ctrl-top-right{top:240px!important}
- .workspace.sheet-open .map-toolbar{z-index:29}
+ .maplibregl-ctrl-top-right{top:auto!important;bottom:175px!important;right:10px!important;left:auto!important}
+ .workspace.sheet-open .maplibregl-ctrl-top-right{right:10px!important;bottom:calc(75dvh + 8px)!important}
+ .map-toolbar{flex-direction:column!important}
 }
+.maplibregl-ctrl-top-right .maplibregl-ctrl{float:right;clear:both}

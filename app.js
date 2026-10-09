@@ -629,5 +629,6 @@ sheetHandle.addEventListener("touchend", e => {
 }, { passive: true });
 
 render();
+if(window.innerWidth>800)setSheetOpen(true);
 loadMapLibrary();
 if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(error => console.warn("Service worker", error)));

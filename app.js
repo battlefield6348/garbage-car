@@ -23,6 +23,8 @@ let deviationCount = 0;
 let lastDeviationAlert = 0;
 let fixedProgress = 0;
 let fixedRouteDraft = null;
+let searchAbort = null;
+let suppressMapClickUntil = 0;
 function viaKey(a,b){return a.id+"__"+b.id;}
 function routeSegments(){const p=active()?.waypoints||[];return p.slice(1).map((end,i)=>({start:p[i],end,key:viaKey(p[i],end)}));}
 function editViaPoints(){return active()?.via || (active().via={});}
@@ -84,8 +86,9 @@ function setupRouteDragging(){
  if(!map)return;
  let drag=null;
  const onLine=e=>map.getLayer("road-route-hit")&&map.queryRenderedFeatures(e.point,{layers:["road-route-hit"]}).length>0;
+ const nearMarker=e=>markers.some(marker=>{const p=map.project(marker.getLngLat());return Math.hypot(p.x-e.point.x,p.y-e.point.y)<26;})||viaMarkers.some(marker=>{const p=map.project(marker.getLngLat());return Math.hypot(p.x-e.point.x,p.y-e.point.y)<22;});
  const begin=e=>{
-  if(navigating||!onLine(e))return;
+  if(navigating||nearMarker(e)||!onLine(e))return;
   drag={start:e.point,last:e.lngLat,moved:false};
   map.dragPan.disable();
   map.getCanvas().style.cursor="grabbing";
@@ -99,11 +102,11 @@ function setupRouteDragging(){
   if(!drag)return;
   const d=drag;drag=null;
   map.dragPan.enable();map.getCanvas().style.cursor="";
-  if(d.moved)insertViaAt({lng:(e?.lngLat||d.last).lng,lat:(e?.lngLat||d.last).lat});
+  if(d.moved){suppressMapClickUntil=Date.now()+700;insertViaAt({lng:(e?.lngLat||d.last).lng,lat:(e?.lngLat||d.last).lat});}
  };
  map.on("mousedown",begin);map.on("mousemove",move);map.on("mouseup",finish);
  map.on("touchstart",e=>{
-  if(navigating||e.originalEvent.touches.length!==1||!onLine(e))return;
+  if(navigating||e.originalEvent.touches.length!==1||nearMarker(e)||!onLine(e))return;
   drag={start:e.point,last:e.lngLat,moved:false};
   map.dragPan.disable();
  });
@@ -148,7 +151,6 @@ function render() {
     $("routeList").append(node);
   });
   const route = active();
-  fixedRouteDraft = null;
   $("emptyState").hidden = !!route;
   $("editorContent").hidden = !route;
   if (!route) return;
@@ -225,7 +227,7 @@ function initMap() {
     geo.on("geolocate", event => { if (!navigating) currentPosition = { lat: event.coords.latitude, lng: event.coords.longitude, accuracy: event.coords.accuracy }; });
     map.on("load", () => { geo.trigger(); drawMarkers(); refreshViaMarkers(); scheduleRoadRoute(); setupRouteDragging(); });
     map.on("click", event => {
-      if (navigating) return;
+      if (navigating || Date.now()<suppressMapClickUntil) return;
       select({
         name: "自訂停靠點",
         address: formatCoord({ lat: event.lngLat.lat, lng: event.lngLat.lng }),
@@ -270,7 +272,9 @@ function drawMarkers() {
   route.waypoints.forEach((point, index) => {
     const element = document.createElement("div"); element.className = "number-marker"; element.textContent = index + 1;
     const marker = new maplibregl.Marker({ element, draggable: !navigating }).setLngLat([point.lng, point.lat]).addTo(map);
+    marker.on("dragstart",()=>{suppressMapClickUntil=Date.now()+1000;});
     marker.on("dragend", () => {
+      suppressMapClickUntil=Date.now()+700;
       if (navigating) return;
       const position = marker.getLngLat();
       invalidateFixedRoute();
@@ -540,6 +544,44 @@ $("addSelectedBtn").onclick = () => {
   if (selectedMarker) { selectedMarker.remove(); selectedMarker = null; }
   $("selectionCard").hidden = true; save();
 };
+async function searchAddresses(query){
+ const output=$("searchResults");
+ if(searchAbort)searchAbort.abort();
+ searchAbort=new AbortController();
+ output.hidden=false;
+ output.replaceChildren();
+ const notice=document.createElement("p");notice.textContent="搜尋中…";output.append(notice);
+ try{
+  const url="https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=6&accept-language=zh-TW&q="+encodeURIComponent(query);
+  const response=await fetch(url,{signal:searchAbort.signal,headers:{"Accept":"application/json"}});
+  if(!response.ok)throw Error("HTTP "+response.status);
+  const items=await response.json();
+  output.replaceChildren();
+  if(!items.length){notice.textContent="找不到地點，請嘗試更完整的地址";output.append(notice);return;}
+  for(const item of items){
+   const button=document.createElement("button");button.type="button";button.className="search-result";
+   button.textContent=item.display_name;
+   button.onclick=()=>{
+    const point={name:item.name||item.display_name.split(",")[0],address:item.display_name,lat:Number(item.lat),lng:Number(item.lon)};
+    select(point);
+    map?.flyTo({center:[point.lng,point.lat],zoom:17});
+    output.hidden=true;
+    $("searchInput").value=point.address;
+   };
+   output.append(button);
+  }
+ }catch(error){
+  if(error.name==="AbortError")return;
+  output.replaceChildren();notice.textContent="地址搜尋暫時無法使用，請稍後再試";output.append(notice);
+ }
+}
+$("searchForm").addEventListener("submit",event=>{
+ event.preventDefault();
+ const query=$("searchInput").value.trim();
+ if(query.length<2){$("searchInput").focus();return;}
+ searchAddresses(query);
+});
+
 $("startNavBtn").onclick = startNavigation;
 $("saveFixedBtn").onclick=()=>{const route=active();if(!route||!fixedRouteDraft)return;route.fixedGeometry=structuredClone(fixedRouteDraft);route.mode="fixed";save();};
 $("modeBtn").onclick=()=>{const route=active();if(!route)return;route.mode=route.mode==="dynamic"?"fixed":"dynamic";save();};
